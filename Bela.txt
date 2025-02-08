@@ -1,0 +1,112 @@
+#include <Bela.h>
+#include <libraries/AudioFile/AudioFile.h>
+#include <vector>
+
+// Hall sensor pins
+int hallSensorPin0 = 0; // Corresponds to mi.wav
+int hallSensorPin1 = 3; // Corresponds to re.wav
+int hallSensorPin2 = 2; // Corresponds to sol.wav
+
+bool isPlaying0 = false, isPlaying1 = false, isPlaying2 = false;
+unsigned int audioReadPointer0 = 0, audioReadPointer1 = 0, audioReadPointer2 = 0;
+std::vector<std::vector<float>> audioBuffer0, audioBuffer1, audioBuffer2;
+unsigned int audioBufferLength0 = 0, audioBufferLength1 = 0, audioBufferLength2 = 0;
+
+int lastSensorState0 = HIGH, lastSensorState1 = HIGH, lastSensorState2 = HIGH;
+
+bool setup(BelaContext *context, void *userData) {
+    // Set Hall sensor pins as input
+    pinMode(context, 0, hallSensorPin0, INPUT);
+    pinMode(context, 0, hallSensorPin1, INPUT);
+    pinMode(context, 0, hallSensorPin2, INPUT);
+
+    // Load audio files
+    audioBuffer0 = AudioFileUtilities::load("mi.wav");
+    if (audioBuffer0.empty() || audioBuffer0[0].empty()) {
+        rt_printf("Error: could not load mi.wav\n");
+        return false;
+    }
+    audioBufferLength0 = audioBuffer0[0].size();
+
+    audioBuffer1 = AudioFileUtilities::load("do.wav");
+    if (audioBuffer1.empty() || audioBuffer1[0].empty()) {
+        rt_printf("Error: could not load re.wav\n");
+        return false;
+    }
+    audioBufferLength1 = audioBuffer1[0].size();
+
+    audioBuffer2 = AudioFileUtilities::load("sol.wav");
+    if (audioBuffer2.empty() || audioBuffer2[0].empty()) {
+        rt_printf("Error: could not load sol.wav\n");
+        return false;
+    }
+    audioBufferLength2 = audioBuffer2[0].size();
+
+    return true;
+}
+
+void render(BelaContext *context, void *userData) {
+    for (unsigned int n = 0; n < context->audioFrames; n++) {
+        // Read the state of each Hall sensor
+        int sensorState0 = digitalRead(context, n, hallSensorPin0);
+        int sensorState1 = digitalRead(context, n, hallSensorPin1);
+        int sensorState2 = digitalRead(context, n, hallSensorPin2);
+
+        // Detect falling edges (HIGH -> LOW)
+        bool fallingEdge0 = (lastSensorState0 == HIGH && sensorState0 == LOW);
+        bool fallingEdge1 = (lastSensorState1 == HIGH && sensorState1 == LOW);
+        bool fallingEdge2 = (lastSensorState2 == HIGH && sensorState2 == LOW);
+
+        // Start playing the corresponding audio when a falling edge is detected
+        if (fallingEdge0 && !isPlaying0) {
+            isPlaying0 = true;
+            audioReadPointer0 = 0;
+        }
+        if (fallingEdge1 && !isPlaying1) {
+            isPlaying1 = true;
+            audioReadPointer1 = 0;
+        }
+        if (fallingEdge2 && !isPlaying2) {
+            isPlaying2 = true;
+            audioReadPointer2 = 0;
+        }
+
+        // Output audio
+        float out = 0.0f;
+        if (isPlaying0) {
+            if (audioReadPointer0 < audioBufferLength0) {
+                out += audioBuffer0[0][audioReadPointer0++];
+            } else {
+                isPlaying0 = false;
+            }
+        }
+        if (isPlaying1) {
+            if (audioReadPointer1 < audioBufferLength1) {
+                out += audioBuffer1[0][audioReadPointer1++];
+            } else {
+                isPlaying1 = false;
+            }
+        }
+        if (isPlaying2) {
+            if (audioReadPointer2 < audioBufferLength2) {
+                out += audioBuffer2[0][audioReadPointer2++];
+            } else {
+                isPlaying2 = false;
+            }
+        }
+
+        // Write the output audio to both left and right channels
+        for (unsigned int channel = 0; channel < context->audioOutChannels; channel++) {
+            audioWrite(context, n, channel, out);
+        }
+
+        // Update the sensor states
+        lastSensorState0 = sensorState0;
+        lastSensorState1 = sensorState1;
+        lastSensorState2 = sensorState2;
+    }
+}
+
+void cleanup(BelaContext *context, void *userData) {
+    // No cleanup required
+}
